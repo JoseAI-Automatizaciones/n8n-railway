@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=${DATABASE_HOST}
+      - DB_POSTGRESDB_PORT=${DATABASE_PORT}
+      - DB_POSTGRESDB_DATABASE=${DATABASE_NAME}
+      - DB_POSTGRESDB_USER=${DATABASE_USER}
+      - DB_POSTGRESDB_PASSWORD=${DATABASE_PASSWORD}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - WEBHOOK_URL=${RAILWAY_STATIC_URL}
+      - GENERIC_TIMEZONE=America/Mexico_City
+      - N8N_LOG_LEVEL=info
+      - N8N_METRICS=true
+      - PORT=5678
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  n8n_data:
