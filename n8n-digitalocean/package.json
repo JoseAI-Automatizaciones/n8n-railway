@@ -1,0 +1,16 @@
+{
+  "name": "n8n-railway",
+  "version": "1.0.0",
+  "description": "n8n deployment for Railway",
+  "main": "index.js",
+  "scripts": {
+    "start": "n8n",
+    "dev": "n8n"
+  },
+  "dependencies": {
+    "n8n": "latest"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

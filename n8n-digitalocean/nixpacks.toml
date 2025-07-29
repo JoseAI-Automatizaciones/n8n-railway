@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ['nodejs', 'npm']
+
+[phases.build]
+cmds = ['echo "No build needed for n8n"']
+
+[start]
+cmd = 'npx n8n'
