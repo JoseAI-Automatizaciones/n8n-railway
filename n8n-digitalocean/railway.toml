@@ -1,2 +1,17 @@
 [build]
 builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[env]
+NODE_ENV = "production"
+N8N_HOST = "0.0.0.0"
+N8N_PORT = "$PORT"
+N8N_PROTOCOL = "https"
+WEBHOOK_URL = "https://$RAILWAY_STATIC_URL"
+N8N_EDITOR_BASE_URL = "https://$RAILWAY_STATIC_URL"
