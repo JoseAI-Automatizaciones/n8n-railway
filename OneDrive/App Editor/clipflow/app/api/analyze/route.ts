@@ -73,10 +73,9 @@ async function analyzeWithGoogleAI(
       'Content-Length': contentLength,
       'Content-Type': mimeType,
     },
-    // @ts-ignore — Node 18 supports ReadableStream as body
     body: videoRes.body,
     duplex: 'half',
-  })
+  } as any)
 
   if (!uploadRes.ok) {
     const err = await uploadRes.json().catch(() => ({}))
