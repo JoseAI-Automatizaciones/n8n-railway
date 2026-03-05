@@ -177,14 +177,14 @@ export function SettingsPanel() {
 
                   <div className="space-y-3">
                     <PasswordField
-                      label="Google AI API Key (for video analysis)"
-                      value={settings.googleAiKey}
-                      onChange={(v) => updateSettings({ googleAiKey: v })}
-                      placeholder="AIzaSy..."
-                      docLink="https://aistudio.google.com/apikey"
+                      label="AssemblyAI API Key (transcripción de audio)"
+                      value={settings.assemblyAiKey}
+                      onChange={(v) => updateSettings({ assemblyAiKey: v })}
+                      placeholder="..."
+                      docLink="https://www.assemblyai.com/dashboard/signup"
                     />
                     <p className="text-[11px] text-muted-foreground">
-                      Required for analyzing large videos (&gt;5 min). Free at ai.google.dev.
+                      Necesario para transcribir el audio del video. Gratuito en assemblyai.com.
                     </p>
                   </div>
 

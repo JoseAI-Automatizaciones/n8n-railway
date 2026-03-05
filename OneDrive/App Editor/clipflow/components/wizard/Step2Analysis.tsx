@@ -10,11 +10,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 
 const STAGES = [
-  'Extracting audio...',
-  'Transcribing with Gemini...',
-  'Analyzing visual content...',
-  'Generating title & description...',
-  'Crafting thumbnail prompt...',
+  'Subiendo audio a AssemblyAI...',
+  'Transcribiendo con AssemblyAI...',
+  'Procesando transcripción...',
+  'Generando título y descripción en español...',
+  'Creando prompt para thumbnail...',
 ]
 
 function LoadingStage({ stage, done }: { stage: string; done: boolean }) {
@@ -47,8 +47,8 @@ export function Step2Analysis() {
   const [regenerating, setRegenerating] = useState<string | null>(null)
 
   const runAnalysis = async () => {
-    if (!videoUrl || !settings.openrouterApiKey) {
-      toast.error('Missing config', { description: 'Add your OpenRouter API key in Settings.' })
+    if (!videoUrl || !settings.openrouterApiKey || !settings.assemblyAiKey) {
+      toast.error('Configuración incompleta', { description: 'Agrega tu OpenRouter API key y AssemblyAI API key en Settings.' })
       return
     }
     setLoading(true)
@@ -66,7 +66,7 @@ export function Step2Analysis() {
         body: JSON.stringify({
           videoPath: videoUrl,
           apiKey: settings.openrouterApiKey,
-          googleAiKey: settings.googleAiKey,
+          assemblyAiKey: settings.assemblyAiKey,
           frameInterval: settings.frameAnalysisInterval,
         }),
       })

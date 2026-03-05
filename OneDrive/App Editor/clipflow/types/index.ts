@@ -62,7 +62,7 @@ export interface PublishedLinks {
 export interface Settings {
   // API Keys
   openrouterApiKey: string
-  googleAiKey: string
+  assemblyAiKey: string
   kieaiApiKey: string
   uploadpostApiKey: string
   uploadpostUser: string
@@ -81,7 +81,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   openrouterApiKey: '',
-  googleAiKey: '',
+  assemblyAiKey: '',
   kieaiApiKey: '',
   uploadpostApiKey: '',
   uploadpostUser: '',
