@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { callOpenRouterJSON } from '@/lib/openrouter'
+import { callOpenRouter, callOpenRouterJSON } from '@/lib/openrouter'
 
 export const maxDuration = 300
 
@@ -31,7 +31,6 @@ async function transcribeWithAssemblyAI(
 ): Promise<{ text: string; words: AssemblyWord[]; chapters: AssemblyChapter[] }> {
   const BASE = 'https://api.assemblyai.com/v2'
 
-  // 1. Submit transcription job
   const submitRes = await fetch(`${BASE}/transcript`, {
     method: 'POST',
     headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
@@ -49,7 +48,7 @@ async function transcribeWithAssemblyAI(
 
   const { id } = await submitRes.json()
 
-  // 2. Poll until completed (max 25 attempts × 10s = 250s)
+  // Poll until completed (max 25 attempts × 10s = 250s)
   for (let i = 0; i < 25; i++) {
     await new Promise((r) => setTimeout(r, 10000))
     const statusRes = await fetch(`${BASE}/transcript/${id}`, {
@@ -58,11 +57,7 @@ async function transcribeWithAssemblyAI(
     const data = await statusRes.json()
 
     if (data.status === 'completed') {
-      return {
-        text: data.text ?? '',
-        words: data.words ?? [],
-        chapters: data.chapters ?? [],
-      }
+      return { text: data.text ?? '', words: data.words ?? [], chapters: data.chapters ?? [] }
     }
     if (data.status === 'error') {
       throw new Error(`AssemblyAI transcription error: ${data.error}`)
@@ -75,7 +70,6 @@ async function transcribeWithAssemblyAI(
 function buildFormattedTranscript(text: string, words: AssemblyWord[]): string {
   if (!words.length) return text
 
-  // Group words into ~60-second segments with timestamps
   const segments: string[] = []
   let segmentWords: string[] = []
   let segmentStart = words[0].start
@@ -115,6 +109,17 @@ const SYSTEM_PROMPT = `Eres un experto en estrategia de contenido para YouTube. 
 }
 Devuelve ÚNICAMENTE JSON válido, sin markdown.`
 
+const SYSTEM_PROMPT_MULTIMODAL = `Eres un experto en estrategia de contenido para YouTube. Analiza este video completo: escucha el audio, transcribe el contenido y genera un objeto JSON con estos campos EXACTAMENTE. Todo en ESPAÑOL excepto thumbnailPrompt:
+{
+  "title": "título de YouTube atractivo, máximo 70 caracteres, en español",
+  "description": "descripción completa de YouTube con intro, timestamps del contenido, llamada a la acción y hashtags, en español",
+  "thumbnailPrompt": "detailed prompt in ENGLISH for AI thumbnail generation (visual composition, colors, text overlay, professional YouTube thumbnail style)",
+  "transcript": "transcripción completa del audio del video con timestamps en formato [M:SS] cada 60 segundos aproximadamente",
+  "visualDescription": "resumen de los principales temas y puntos clave tratados en el video, en español",
+  "timestamps": [{"time": 0, "description": "descripción del segmento en español"}]
+}
+Devuelve ÚNICAMENTE JSON válido, sin markdown.`
+
 export async function POST(req: NextRequest) {
   try {
     const { videoPath, apiKey, assemblyAiKey, frameInterval = 5, regenerate, existing } = await req.json()
@@ -145,40 +150,65 @@ export async function POST(req: NextRequest) {
     }
 
     if (!videoPath) return NextResponse.json({ error: 'Video path required' }, { status: 400 })
-    if (!assemblyAiKey) return NextResponse.json({ error: 'AssemblyAI API key required' }, { status: 400 })
 
-    // 1. Transcribe audio with AssemblyAI
-    const { text: rawTranscript, words, chapters } = await transcribeWithAssemblyAI(videoPath, assemblyAiKey)
+    // --- Path A: AssemblyAI transcription (preferred, more accurate) ---
+    if (assemblyAiKey) {
+      const { text: rawTranscript, words, chapters } = await transcribeWithAssemblyAI(videoPath, assemblyAiKey)
+      const formattedTranscript = buildFormattedTranscript(rawTranscript, words)
+      const chapterTimestamps = chapters.map((ch) => ({
+        time: Math.floor(ch.start / 1000),
+        description: ch.headline,
+      }))
 
-    // 2. Build formatted transcript with timestamps
-    const formattedTranscript = buildFormattedTranscript(rawTranscript, words)
+      const userContent = chapterTimestamps.length > 0
+        ? `Transcripción del video:\n\n${rawTranscript}\n\nCapítulos detectados automáticamente:\n${chapters.map((ch) => `[${Math.floor(ch.start / 1000)}s] ${ch.headline}: ${ch.gist}`).join('\n')}\n\nGenera el análisis JSON completo en español.`
+        : `Transcripción del video:\n\n${rawTranscript}\n\nGenera el análisis JSON completo en español.`
 
-    // 3. Build timestamps from AssemblyAI chapters (if available) or let Gemini infer them
-    const chapterTimestamps = chapters.map((ch) => ({
-      time: Math.floor(ch.start / 1000),
-      description: ch.headline,
-    }))
+      const analysis = await callOpenRouterJSON<Omit<AnalysisResult, 'transcript'>>({
+        apiKey,
+        maxTokens: 8000,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+      })
 
-    // 4. Generate title, description, thumbnailPrompt, visualDescription with OpenRouter (in Spanish)
-    const userContent = chapterTimestamps.length > 0
-      ? `Transcripción del video:\n\n${rawTranscript}\n\nCapítulos detectados automáticamente:\n${chapters.map((ch) => `[${Math.floor(ch.start / 1000)}s] ${ch.headline}: ${ch.gist}`).join('\n')}\n\nGenera el análisis JSON completo en español.`
-      : `Transcripción del video:\n\n${rawTranscript}\n\nGenera el análisis JSON completo en español.`
+      const result: AnalysisResult = {
+        ...analysis,
+        transcript: formattedTranscript || rawTranscript,
+        timestamps: analysis.timestamps?.length ? analysis.timestamps : chapterTimestamps,
+      }
 
-    const analysis = await callOpenRouterJSON<Omit<AnalysisResult, 'transcript'>>({
+      return NextResponse.json(result)
+    }
+
+    // --- Path B: Gemini multimodal fallback (no AssemblyAI key needed) ---
+    // Gemini 2.5 Pro analyzes the video directly from its public URL
+    const rawResponse = await callOpenRouter({
       apiKey,
+      model: 'google/gemini-2.5-pro',
       maxTokens: 8000,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userContent },
+        { role: 'system', content: SYSTEM_PROMPT_MULTIMODAL },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Analiza este video completo. Escucha el audio, transcríbelo y genera el análisis JSON completo en español.',
+            },
+            {
+              type: 'image_url',
+              image_url: { url: videoPath },
+            },
+          ] as any,
+        },
       ],
     })
 
-    const result: AnalysisResult = {
-      ...analysis,
-      transcript: formattedTranscript || rawTranscript,
-      // Use AssemblyAI chapters as timestamps if available and Gemini didn't generate better ones
-      timestamps: analysis.timestamps?.length ? analysis.timestamps : chapterTimestamps,
-    }
+    const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, rawResponse]
+    const raw = (jsonMatch[1] ?? rawResponse).trim()
+    const result = JSON.parse(raw) as AnalysisResult
 
     return NextResponse.json(result)
   } catch (e: any) {
