@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { callOpenRouterJSON } from '@/lib/openrouter'
+import { callClaudeJSON } from '@/lib/anthropic'
 import { v4 as uuidv4 } from 'uuid'
 
 export const maxDuration = 120
@@ -16,15 +16,15 @@ export async function POST(req: NextRequest) {
   try {
     const { videoPath, transcript, visualDescription, apiKey, videoDuration } = await req.json()
 
-    if (!videoPath || !apiKey) {
+    const claudeKey = apiKey || process.env.ANTHROPIC_API_KEY
+    if (!videoPath || !claudeKey) {
       return NextResponse.json({ error: 'Video path and API key required' }, { status: 400 })
     }
 
     const durationNote = videoDuration
-      ? `The video is exactly ${Math.floor(videoDuration)} seconds (${Math.floor(videoDuration / 60)} minutes) long. ALL timestamps MUST be between 0 and ${Math.floor(videoDuration)}. Do NOT generate timestamps beyond this limit.`
-      : 'Use transcript timestamps to infer video duration and pick accurate start/end times.'
+      ? `El video tiene exactamente ${Math.floor(videoDuration)} segundos (${Math.floor(videoDuration / 60)} minutos). TODOS los timestamps DEBEN estar entre 0 y ${Math.floor(videoDuration)}. NO generes timestamps fuera de este límite.`
+      : 'Usa los timestamps de la transcripción para inferir la duración y elige tiempos precisos.'
 
-    // Ask Gemini to identify 6 viral segments based on transcript + visual description
     const systemPrompt = `Eres un experto en contenido viral para video de formato corto. Analiza la transcripción y descripción visual del video e identifica los 6 segmentos más virales o valiosos.
 
 Requisitos para cada segmento:
@@ -46,14 +46,13 @@ Devuelve un array JSON de exactamente 6 objetos:
 ]
 Devuelve ÚNICAMENTE JSON válido.`
 
-    const segments = await callOpenRouterJSON<ViralSegment[]>({
-      apiKey,
-      model: 'google/gemini-2.5-pro',
+    const segments = await callClaudeJSON<ViralSegment[]>({
+      apiKey: claudeKey,
+      system: systemPrompt,
       messages: [
-        { role: 'system', content: systemPrompt },
         {
           role: 'user',
-          content: `Transcript:\n${transcript?.slice(0, 8000) ?? 'No transcript available'}\n\nVisual description:\n${visualDescription?.slice(0, 4000) ?? 'Not available'}`,
+          content: `Transcripción:\n${transcript?.slice(0, 8000) ?? 'No disponible'}\n\nDescripción visual:\n${visualDescription?.slice(0, 4000) ?? 'No disponible'}`,
         },
       ],
     })

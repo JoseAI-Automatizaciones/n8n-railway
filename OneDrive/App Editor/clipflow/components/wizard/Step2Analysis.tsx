@@ -47,8 +47,8 @@ export function Step2Analysis() {
   const [regenerating, setRegenerating] = useState<string | null>(null)
 
   const runAnalysis = async () => {
-    if (!videoUrl || !settings.openrouterApiKey || !settings.assemblyAiKey) {
-      toast.error('Configuración incompleta', { description: 'Agrega tu OpenRouter API key y AssemblyAI API key en Settings.' })
+    if (!videoUrl || !settings.anthropicApiKey || !settings.assemblyAiKey) {
+      toast.error('Configuración incompleta', { description: 'Agrega tu Anthropic API key y AssemblyAI API key en Settings.' })
       return
     }
     setLoading(true)
@@ -65,7 +65,7 @@ export function Step2Analysis() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPath: videoUrl,
-          apiKey: settings.openrouterApiKey,
+          apiKey: settings.anthropicApiKey,
           assemblyAiKey: settings.assemblyAiKey,
           frameInterval: settings.frameAnalysisInterval,
         }),
@@ -86,7 +86,7 @@ export function Step2Analysis() {
   }
 
   const regenerateField = async (field: 'title' | 'description' | 'thumbnailPrompt') => {
-    if (!settings.openrouterApiKey) return
+    if (!settings.anthropicApiKey) return
     setRegenerating(field)
     try {
       const res = await fetch('/api/analyze', {
@@ -94,7 +94,7 @@ export function Step2Analysis() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPath: videoUrl,
-          apiKey: settings.openrouterApiKey,
+          apiKey: settings.anthropicApiKey,
           frameInterval: settings.frameAnalysisInterval,
           regenerate: field,
           existing: analysisResult,

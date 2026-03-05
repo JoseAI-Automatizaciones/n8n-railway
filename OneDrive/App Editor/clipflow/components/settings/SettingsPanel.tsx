@@ -159,16 +159,17 @@ export function SettingsPanel() {
                 <TabsContent value="apis" className="space-y-5 mt-0">
                   <div className="space-y-3">
                     <PasswordField
-                      label="OpenRouter API Key"
-                      value={settings.openrouterApiKey}
-                      onChange={(v) => updateSettings({ openrouterApiKey: v })}
-                      placeholder="sk-or-v1-..."
-                      docLink="https://openrouter.ai/keys"
+                      label="Anthropic API Key (Claude)"
+                      value={settings.anthropicApiKey}
+                      onChange={(v) => updateSettings({ anthropicApiKey: v })}
+                      placeholder="sk-ant-api03-..."
+                      docLink="https://console.anthropic.com/settings/keys"
                     />
                     <TestButton
-                      label="OpenRouter"
-                      onTest={testApi('openrouter', 'https://openrouter.ai/api/v1/models', {
-                        Authorization: `Bearer ${settings.openrouterApiKey}`,
+                      label="Anthropic"
+                      onTest={testApi('anthropic', 'https://api.anthropic.com/v1/models', {
+                        'x-api-key': settings.anthropicApiKey,
+                        'anthropic-version': '2023-06-01',
                       })}
                     />
                   </div>

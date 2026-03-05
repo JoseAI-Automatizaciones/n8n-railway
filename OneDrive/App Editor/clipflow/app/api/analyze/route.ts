@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { callOpenRouter, callOpenRouterJSON } from '@/lib/openrouter'
+import { callClaude, callClaudeJSON } from '@/lib/anthropic'
 
 export const maxDuration = 300
 
@@ -109,23 +109,14 @@ const SYSTEM_PROMPT = `Eres un experto en estrategia de contenido para YouTube. 
 }
 Devuelve ÚNICAMENTE JSON válido, sin markdown.`
 
-const SYSTEM_PROMPT_MULTIMODAL = `Eres un experto en estrategia de contenido para YouTube. Analiza este video completo: escucha el audio, transcribe el contenido y genera un objeto JSON con estos campos EXACTAMENTE. Todo en ESPAÑOL excepto thumbnailPrompt:
-{
-  "title": "título de YouTube atractivo, máximo 70 caracteres, en español",
-  "description": "descripción completa de YouTube con intro, timestamps del contenido, llamada a la acción y hashtags, en español",
-  "thumbnailPrompt": "detailed prompt in ENGLISH for AI thumbnail generation (visual composition, colors, text overlay, professional YouTube thumbnail style)",
-  "transcript": "transcripción completa del audio del video con timestamps en formato [M:SS] cada 60 segundos aproximadamente",
-  "visualDescription": "resumen de los principales temas y puntos clave tratados en el video, en español",
-  "timestamps": [{"time": 0, "description": "descripción del segmento en español"}]
-}
-Devuelve ÚNICAMENTE JSON válido, sin markdown.`
-
 export async function POST(req: NextRequest) {
   try {
     const { videoPath, apiKey, assemblyAiKey, frameInterval = 5, regenerate, existing } = await req.json()
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'OpenRouter API key required' }, { status: 400 })
+    // Use provided key or fall back to server env var
+    const claudeKey = apiKey || process.env.ANTHROPIC_API_KEY
+    if (!claudeKey) {
+      return NextResponse.json({ error: 'Anthropic API key required' }, { status: 400 })
     }
 
     // Regeneration of a single field — no video needed, uses existing transcript
@@ -133,13 +124,12 @@ export async function POST(req: NextRequest) {
       const fieldMap: Record<string, string> = {
         title: 'Regenera un título de YouTube mejorado (máximo 70 caracteres, con palabras clave, atractivo). EN ESPAÑOL.',
         description: 'Regenera una descripción de YouTube mejorada (SEO optimizada, con timestamps, llamada a la acción, hashtags). EN ESPAÑOL.',
-        thumbnailPrompt: 'Regenerate an improved thumbnail prompt for kie.ai Nano Banana 2 (detailed visual composition, colors, text overlay, professional YouTube thumbnail style). In ENGLISH.',
+        thumbnailPrompt: 'Regenerate an improved thumbnail prompt for AI image generation (detailed visual composition, colors, text overlay, professional YouTube thumbnail style). In ENGLISH.',
       }
-      const result = await callOpenRouterJSON<Record<string, string>>({
-        apiKey,
-        model: 'google/gemini-2.5-pro',
+      const result = await callClaudeJSON<Record<string, string>>({
+        apiKey: claudeKey,
+        system: 'Eres un experto en optimización de contenido para YouTube. Devuelve ÚNICAMENTE JSON válido.',
         messages: [
-          { role: 'system', content: 'Eres un experto en optimización de contenido para YouTube. Devuelve ÚNICAMENTE JSON válido.' },
           {
             role: 'user',
             content: `Contexto del video:\nTítulo: ${existing.title}\nTranscripción: ${existing.transcript?.slice(0, 1500)}\n\n${fieldMap[regenerate]}\n\nDevuelve JSON: {"${regenerate}": "..."}`,
@@ -150,65 +140,33 @@ export async function POST(req: NextRequest) {
     }
 
     if (!videoPath) return NextResponse.json({ error: 'Video path required' }, { status: 400 })
+    if (!assemblyAiKey) return NextResponse.json({ error: 'AssemblyAI API key required' }, { status: 400 })
 
-    // --- Path A: AssemblyAI transcription (preferred, more accurate) ---
-    if (assemblyAiKey) {
-      const { text: rawTranscript, words, chapters } = await transcribeWithAssemblyAI(videoPath, assemblyAiKey)
-      const formattedTranscript = buildFormattedTranscript(rawTranscript, words)
-      const chapterTimestamps = chapters.map((ch) => ({
-        time: Math.floor(ch.start / 1000),
-        description: ch.headline,
-      }))
+    // 1. Transcribe audio with AssemblyAI
+    const { text: rawTranscript, words, chapters } = await transcribeWithAssemblyAI(videoPath, assemblyAiKey)
+    const formattedTranscript = buildFormattedTranscript(rawTranscript, words)
+    const chapterTimestamps = chapters.map((ch) => ({
+      time: Math.floor(ch.start / 1000),
+      description: ch.headline,
+    }))
 
-      const userContent = chapterTimestamps.length > 0
-        ? `Transcripción del video:\n\n${rawTranscript}\n\nCapítulos detectados automáticamente:\n${chapters.map((ch) => `[${Math.floor(ch.start / 1000)}s] ${ch.headline}: ${ch.gist}`).join('\n')}\n\nGenera el análisis JSON completo en español.`
-        : `Transcripción del video:\n\n${rawTranscript}\n\nGenera el análisis JSON completo en español.`
+    const userContent = chapterTimestamps.length > 0
+      ? `Transcripción del video:\n\n${rawTranscript}\n\nCapítulos detectados automáticamente:\n${chapters.map((ch) => `[${Math.floor(ch.start / 1000)}s] ${ch.headline}: ${ch.gist}`).join('\n')}\n\nGenera el análisis JSON completo en español.`
+      : `Transcripción del video:\n\n${rawTranscript}\n\nGenera el análisis JSON completo en español.`
 
-      const analysis = await callOpenRouterJSON<Omit<AnalysisResult, 'transcript'>>({
-        apiKey,
-        maxTokens: 8000,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-      })
-
-      const result: AnalysisResult = {
-        ...analysis,
-        transcript: formattedTranscript || rawTranscript,
-        timestamps: analysis.timestamps?.length ? analysis.timestamps : chapterTimestamps,
-      }
-
-      return NextResponse.json(result)
-    }
-
-    // --- Path B: Gemini multimodal fallback (no AssemblyAI key needed) ---
-    // Gemini 2.5 Pro analyzes the video directly from its public URL
-    const rawResponse = await callOpenRouter({
-      apiKey,
-      model: 'google/gemini-2.5-pro',
+    // 2. Generate title, description, thumbnailPrompt etc. with Claude
+    const analysis = await callClaudeJSON<Omit<AnalysisResult, 'transcript'>>({
+      apiKey: claudeKey,
       maxTokens: 8000,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT_MULTIMODAL },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Analiza este video completo. Escucha el audio, transcríbelo y genera el análisis JSON completo en español.',
-            },
-            {
-              type: 'image_url',
-              image_url: { url: videoPath },
-            },
-          ] as any,
-        },
-      ],
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userContent }],
     })
 
-    const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, rawResponse]
-    const raw = (jsonMatch[1] ?? rawResponse).trim()
-    const result = JSON.parse(raw) as AnalysisResult
+    const result: AnalysisResult = {
+      ...analysis,
+      transcript: formattedTranscript || rawTranscript,
+      timestamps: analysis.timestamps?.length ? analysis.timestamps : chapterTimestamps,
+    }
 
     return NextResponse.json(result)
   } catch (e: any) {

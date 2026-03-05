@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { callOpenRouterJSON } from '@/lib/openrouter'
+import { callClaudeJSON } from '@/lib/anthropic'
 
 export const maxDuration = 120
 
@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
       apiKey,
     } = await req.json()
 
-    if (!apiKey) return NextResponse.json({ error: 'OpenRouter API key required' }, { status: 400 })
+    const claudeKey = apiKey || process.env.ANTHROPIC_API_KEY
+    if (!claudeKey) return NextResponse.json({ error: 'Anthropic API key required' }, { status: 400 })
 
     const systemPrompt = `Eres un experto en estrategia de contenido para redes sociales. Basándote en la información del video, genera posts nativos para Reddit y LinkedIn COMPLETAMENTE EN ESPAÑOL.
 
@@ -44,10 +45,10 @@ Devuelve JSON:
 }
 Devuelve ÚNICAMENTE JSON válido.`
 
-    const result = await callOpenRouterJSON({
-      apiKey,
+    const result = await callClaudeJSON({
+      apiKey: claudeKey,
+      system: systemPrompt,
       messages: [
-        { role: 'system', content: systemPrompt },
         {
           role: 'user',
           content: `Título del video: ${youtubeTitle}\nLink de YouTube: ${youtubeLink ?? 'N/A'}\nSubreddit sugerido: ${defaultSubreddit}\n\nTranscripción:\n${transcript?.slice(0, 6000) ?? 'N/A'}\n\nDescripción del video:\n${youtubeDescription?.slice(0, 2000) ?? 'N/A'}`,
